@@ -6,73 +6,99 @@ const PORT = process.env.PORT || 3001;
 
 app.use(express.json());
 
-/* Test request body
-{
-    "deviceid": 1,
-    "restaurantid": 1,
-    "leftOrRight": "right"    
-}
-*/
-
-/*app.post("/hungrs", async (req, res) => {
-    try {
-        const { deviceid, restaurantid, leftOrRight } = req.body;
-        const newRelationship = db.run(`INSERT INTO relationships (deviceid, restaurantid, leftOrRight) VALUES (${deviceid}, ${restaurantid}, "${leftOrRight}")`);
-        res.json("device: " + deviceid + " has swiped "+ leftOrRight + " on restaurant: " + restaurantid); 
-    } catch (err) {
-        console.error(err.message);
-    }
-}); 
-*/
-
-app.post("/device", (req, res) => {
+app.post("/swiped", (req, res) => {
   try {
-    const { deviceid } = req.body;
-    // const checkDevice = db.run(
-    //   `select count(*) from devices where deviceid = ${deviceid}`
-    // );
-    const sql = `select count(*) from devices where deviceid = ${deviceid}`;
-    //console.log(checkDevice);
-    var alreadyEstRel = false;
-    db.all(sql, [], (err, rows) => {
-      if (err) {
-        throw err;
-      }
-      const checkDevice = JSON.stringify(rows[0])
-        .trim("}")
-        .split(":")[1]
-        .charAt(0);
-      console.log(checkDevice);
-      if (checkDevice > 0) {
-        alreadyEstRel = true;
-      }
-    }).then(() => {
-      console.log(alreadyEstRel);
-      if (!alreadyEstRel) {
-        const newRelationship = db.run(
-          `INSERT INTO devices (deviceid) VALUES (${deviceid})`
-        );
-        res.json("device: " + deviceid);
-      } else {
-        res.json("this device: " + deviceid + " already exists.");
-      }
-    });
+    const { device_id, restaurant_id, left_or_right } = req.body;
+    const newRelationship = db.run(
+      `INSERT INTO swipes (device_id, restaurant_id, left_or_right) VALUES (${device_id}, ${restaurant_id}, "${left_or_right}")`
+    );
+    res.json(
+      "device: " +
+        device_id +
+        " has swiped " +
+        left_or_right +
+        " on restaurant: " +
+        restaurant_id
+    );
   } catch (err) {
     console.error(err.message);
   }
 });
+// {
+//   "device_id": 209858979,
+//   "restaurant_id": 1,
+//   "left_or_right": "left"
+// }
 
 app.post("/restaurant", (req, res) => {
   try {
-    const { deviceid } = req.body;
+    const { name, address, city, state, zipcode } = req.body;
     const newRelationship = db.run(
-      `INSERT INTO devices (deviceid) VALUES (${deviceid})`
+      `INSERT INTO restaurants (name, address, city, state, zipcode) VALUES ("${name}", "${address}", "${city}", "${state}", "${zipcode}")`
     );
-    res.json("device: " + deviceid);
+    res.json(
+      `New restaurant created with name and address: ${name} at ${address}, ${city}, ${state}, ${zipcode}`
+    );
   } catch (err) {
     console.error(err.message);
   }
 });
+// {
+//   "name": "Pizza Hut",
+//   "address": "3000 Broadway",
+//   "city": "New York",
+//   "state": "NY",
+//   "zipcode": "10001"
+// }
+
+app.post("/device", (req, res) => {
+  try {
+    const { device_id } = req.body;
+    const newRelationship = db.run(
+      `INSERT INTO devices (device_id) VALUES (${device_id})`
+    );
+    res.json("device: " + device_id);
+  } catch (err) {
+    console.error(err.message);
+  }
+});
+
+// app.post("/device", (req, res) => {
+//   try {
+//     const { deviceid } = req.body;
+//     // const checkDevice = db.run(
+//     //   `select count(*) from devices where deviceid = ${deviceid}`
+//     // );
+//     const sql = `select count(*) from devices where deviceid = ${deviceid}`;
+//     //console.log(checkDevice);
+//     var alreadyEstRel = false;
+//     db.all(sql, [], (err, rows) => {
+//       if (err) {
+//         throw err;
+//       }
+//       const checkDevice = JSON.stringify(rows[0])
+//         .trim("}")
+//         .split(":")[1]
+//         .charAt(0);
+//       console.log(checkDevice);
+//       if (checkDevice > 0) {
+//         alreadyEstRel = true;
+//       }
+//     }).then(() => {
+//       console.log(alreadyEstRel);
+//       if (!alreadyEstRel) {
+//         const newRelationship = db.run(
+//           `INSERT INTO devices (deviceid) VALUES (${deviceid})`
+//         );
+//         res.json("device: " + deviceid);
+//       } else {
+//         res.json("this device: " + deviceid + " already exists.");
+//       }
+//     });
+//   } catch (err) {
+//     console.error(err.message);
+//   }
+// });
 
 // app.post("/hungrs", async (req, res) => {
 //     try {
