@@ -1,137 +1,180 @@
 const express = require("express");
 const http = require("http");
-const app = express();
 const db = require("./db");
+const cors = require("cors");
+require("dotenv").config();
+
 const PORT = process.env.PORT || 3001;
+let API_KEY = process.env.API_KEY;
 
+const app = express();
+const server = http.createServer(app);
 app.use(express.json());
+app.use(cors());
 
-app.post("/swiped", (req, res) => {
-  try {
-    const { device_id, restaurant_id, left_or_right } = req.body;
-    const newRelationship = db.run(
-      `INSERT INTO swipes (device_id, restaurant_id, left_or_right) VALUES (${device_id}, ${restaurant_id}, "${left_or_right}")`
-    );
-    res.json(
-      "device: " +
-        device_id +
-        " has swiped " +
-        left_or_right +
-        " on restaurant: " +
-        restaurant_id
-    );
-  } catch (err) {
-    console.error(err.message);
-  }
+const yelp = require("yelp-fusion");
+
+const apiKey = API_KEY;
+
+//40.742500, -74.006000
+
+const client = yelp.client(apiKey);
+
+app.get("/find", (req, res) => {
+  const searchRequest = {
+    latitude: req.query.latitude,
+    longitude: req.query.longitude,
+  };
+  client
+    .search(searchRequest)
+    .then((response) => {
+      const restaurants = [];
+      let businesses = response.jsonBody.businesses;
+      for (let i = 0; i < businesses.length; i++) {
+        const restaurant = {
+          name: businesses[i].name,
+          image_url: businesses[i].image_url,
+          rating: businesses[i].rating,
+          price: businesses[i].price,
+          location: businesses[i].location,
+        };
+        restaurants.push(restaurant);
+      }
+      res.status(200).json(restaurants);
+    })
+    .catch((error) => {
+      console.log(error);
+      res.status(404).json("No restaurants found :(");
+    });
 });
+
+app.get("/restaurants", (request, response) => {
+  const deviceID = request.query.device;
+  const sql = `SELECT 
+  * from SWIPES INNER JOIN 
+  restaurants ON 
+  swipes.restaurant_id=restaurants.id 
+  WHERE swipes.device_id=(?);`;
+  db.all(sql, [deviceID], (err, rows) => {
+    if (err) {
+      console.log(err);
+    } else {
+      const restaurants = [];
+      rows.forEach((row) => {
+        restaurants.push({
+          name: row.name,
+          address: row.address,
+          city: row.city,
+          state: row.state,
+          zipcode: row.zipcode,
+        });
+      });
+      return response.status(200).json(restaurants);
+    }
+  });
+});
+
 // {
 //   "device_id": 209858979,
-//   "restaurant_id": 1,
-//   "left_or_right": "left"
-// }
-
-app.post("/restaurant", (req, res) => {
-  try {
-    const { name, address, city, state, zipcode } = req.body;
-    const newRelationship = db.run(
-      `INSERT INTO restaurants (name, address, city, state, zipcode) VALUES ("${name}", "${address}", "${city}", "${state}", "${zipcode}")`
-    );
-    res.json(
-      `New restaurant created with name and address: ${name} at ${address}, ${city}, ${state}, ${zipcode}`
-    );
-  } catch (err) {
-    console.error(err.message);
-  }
-});
-// {
 //   "name": "Pizza Hut",
 //   "address": "3000 Broadway",
 //   "city": "New York",
 //   "state": "NY",
 //   "zipcode": "10001"
 // }
+app.post("/swiped", (req, res) => {
+  const { deviceID, name, address, city, state, zipcode } = req.body;
+  const selectRes = `SELECT id FROM RESTAURANTS 
+    WHERE name=(?) AND address=(?) AND city=(?)
+    AND state=(?) AND zipcode=(?)`;
+  const insertDevice = `INSERT INTO devices(device_id) VALUES(?)`;
+  const insertSwipe = `INSERT INTO 
+    swipes(device_id, restaurant_id) 
+    values(?,?)`;
+  const insertRes = `INSERT 
+        INTO restaurants(name, address, 
+        city, state, zipcode) values(?,?,?,?,?)`;
+
+  //insert device into the table
+  db.run(insertDevice, [deviceID], (err) => {
+    if (err) {
+      console.log(`Device ${deviceID} already exists!`);
+    }
+  });
+
+  //select restaurant to check duplicate
+  const selectRetaurant = new Promise((resolve, reject) => {
+    db.get(selectRes, [name, address, city, state, zipcode], (err, row) => {
+      if (err) {
+        console.log(
+          `${name}, ${address},${city}, ${state}, ${zipcode} already exists!`
+        );
+        reject(err);
+      }
+      resolve(row);
+    });
+  });
+
+  const insertNewSwipe = (deviceID, restaurantID) => {
+    db.run(insertSwipe, [deviceID, restaurantID], (err) => {
+      if (err) {
+        return res.status(409).json({ message: "Swipe already exists!" });
+      }
+      return res.status(201).json({ message: "Successful" });
+    });
+  };
+
+  selectRetaurant
+    .then((restaurantID) => {
+      if (restaurantID) {
+        const id = restaurantID.id;
+        //restaurant already exists
+        insertNewSwipe(deviceID, id);
+      } else {
+        //insert restaurant and grab the index
+        const insertRestaurant = new Promise((resolve, reject) => {
+          db.run(insertRes, [name, address, city, state, zipcode], function (
+            err
+          ) {
+            if (err) {
+              reject(err);
+            }
+            resolve(this.lastID);
+          });
+        });
+        insertRestaurant
+          .then((newRestaurantID) => {
+            insertNewSwipe(deviceID, newRestaurantID);
+          })
+          .catch((err) => {
+            console.log(err);
+          });
+      }
+    })
+    .catch((err) => {
+      console.log(err);
+    });
+});
 
 app.post("/device", (req, res) => {
   try {
-    const { device_id } = req.body;
+    const { deviceID } = req.body;
     const newRelationship = db.run(
-      `INSERT INTO devices (device_id) VALUES (${device_id})`
+      `INSERT INTO devices (device_id) VALUES (${deviceID})`
     );
-    res.json("device: " + device_id);
+    res.json("device: " + deviceID);
   } catch (err) {
-    console.error(err.message);
+    console.error(err);
   }
 });
 
-// app.post("/device", (req, res) => {
-//   try {
-//     const { deviceid } = req.body;
-//     // const checkDevice = db.run(
-//     //   `select count(*) from devices where deviceid = ${deviceid}`
-//     // );
-//     const sql = `select count(*) from devices where deviceid = ${deviceid}`;
-//     //console.log(checkDevice);
-//     var alreadyEstRel = false;
-//     db.all(sql, [], (err, rows) => {
-//       if (err) {
-//         throw err;
-//       }
-//       const checkDevice = JSON.stringify(rows[0])
-//         .trim("}")
-//         .split(":")[1]
-//         .charAt(0);
-//       console.log(checkDevice);
-//       if (checkDevice > 0) {
-//         alreadyEstRel = true;
-//       }
-//     }).then(() => {
-//       console.log(alreadyEstRel);
-//       if (!alreadyEstRel) {
-//         const newRelationship = db.run(
-//           `INSERT INTO devices (deviceid) VALUES (${deviceid})`
-//         );
-//         res.json("device: " + deviceid);
-//       } else {
-//         res.json("this device: " + deviceid + " already exists.");
-//       }
-//     });
-//   } catch (err) {
-//     console.error(err.message);
-//   }
-// });
-
-// app.post("/hungrs", async (req, res) => {
-//     try {
-//         // Saves needed fields of the request body
-//         const { deviceid, restaurantid, leftOrRight } = req.body;
-//         // Checks whether this information is already present
-//         // To make sure that there are not duplicates
-//         const checkAlreadyEstRel = `select * from relationships where deviceid = ${deviceid} and restaurantid = ${restaurantid} and leftOrRight = "${leftOrRight}"`;
-//         var alreadyEstRel = true;
-//         db.all(checkAlreadyEstRel, [], (err, rows) => {
-//             if (err) { throw err; }
-//             console.log(rows);
-//             if(rows.length == 0) {
-//                 alreadyEstRel = false;
-//             }
-//         });
-//         // If there is no duplicate then create a relationship
-//         if(!alreadyEstRel) {
-//             const newRelationship = db.run(`INSERT INTO relationships (deviceid, restaurantid, leftOrRight) VALUES (${deviceid}, ${restaurantid}, "${leftOrRight}")`);
-//             res.json("device: " + deviceid + " has swiped "+ leftOrRight + " on restaurant: " + restaurantid);
-//         } else {
-//             res.json("this device: " + deviceid + " has already swiped "+ leftOrRight + " on restaurant: " + restaurantid);
-//         }
-//     } catch (err) {
-//         console.error(err.message);
-//     }
-// });
-
-app.get("/", async (req, res, next) => {
-  return res.json("Hello world");
+app.get("/", (request, response) => {
+  return response.status(200).json({ message: "Welcome to hungr API!" });
 });
 
-const server = http.createServer(app);
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}.`);
+  console.log(`Server running on port ${PORT}`);
 });
+// git add .
+// git commit -m "Description"
+// git push
